@@ -63,7 +63,7 @@ This tool addresses that gap with a complete workflow — **load, visualise, fil
 
 ```bash
 # 1. Clone
-git clone <your-repo-url> && cd Event-Label-Studio
+git clone https://github.com/sonaradarcn/Event-Label-Studio.git && cd Event-Label-Studio
 
 # 2. Create and activate the backend environment
 conda env create -f environment.yml
