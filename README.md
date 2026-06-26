@@ -109,20 +109,10 @@ Event-Label-Studio/
 └─ README.md
 ```
 
-## Screenshots
-
-> Drop UI screenshots into `docs/images/` to display them here.
-
-| 3D point-cloud view | XY view & playback |
-|---|---|
-| ![3D](docs/images/view-3d.png) | ![XY](docs/images/view-xy.png) |
-| Wand / two-stage labelling | Video export |
-| ![wand](docs/images/wand.png) | ![export](docs/images/export.png) |
-
 ## License
 
 Released under the [MIT](LICENSE) license.
 
 ## Acknowledgements
 
-This project is an MSc dissertation for COMP66060 at the University of Manchester. Thanks to the supervisor for guidance on event-camera data labelling.
+This project is an MSc dissertation for COMP66060 at the University of Manchester. Thanks to my supervisor, Dr. Alex Marcireau, for guidance on event-camera data labelling.
