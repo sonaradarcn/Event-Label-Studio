@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Node / frontend build
+node_modules/
+dist/
+.vite/
+
+# App runtime data (generated at runtime, not source)
+prototype/cache/
+prototype/output/
+app_prefs.json
+*.log
+devlog.jsonl
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Archives
+*.zip

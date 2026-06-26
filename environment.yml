@@ -1,0 +1,17 @@
+name: eventcamera-blender
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - event-stream==1.6.3
+      - numpy
+      - pandas
+      - pyarrow
+      - psutil
+      - flask
+      - requests
+      - scikit-learn
+      - scipy
+      - imageio[ffmpeg]
