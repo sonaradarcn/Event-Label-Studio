@@ -7,20 +7,21 @@ set "BACKEND_APP=prototype\backend\app.py"
 set "FRONTEND_DIR=prototype\frontend"
 
 rem ---- Python interpreter -------------------------------------------------
-rem Honour a user-provided %PYTHON_EXE% (e.g. a specific conda env's
-rem python.exe); otherwise fall back to `python` / `py` on PATH.
-rem Tip: activate your environment first, e.g.  conda activate eventcamera-blender
-rem  or set a specific one:  set "PYTHON_EXE=C:\path\to\python.exe"
-if defined PYTHON_EXE goto have_python
-where python >nul 2>&1 && (set "PYTHON_EXE=python" & goto have_python)
-where py >nul 2>&1 && (set "PYTHON_EXE=py" & goto have_python)
-echo [ERROR] Python not found on PATH.
-echo         Install Python 3.10 (or activate your conda env), or set PYTHON_EXE
-echo         to a specific interpreter, e.g.:
-echo             set "PYTHON_EXE=C:\path\to\python.exe"
-pause
-exit /b 1
-:have_python
+rem Resolution order: user-set %PYTHON_EXE%  ->  the project's conda env
+rem (eventcamera-blender)  ->  python / py on PATH. The conda-env check fixes
+rem the common case where PATH `python` is some other install missing the deps.
+if not defined PYTHON_EXE if exist "%USERPROFILE%\.conda\envs\eventcamera-blender\python.exe" set "PYTHON_EXE=%USERPROFILE%\.conda\envs\eventcamera-blender\python.exe"
+if not defined PYTHON_EXE if exist "%USERPROFILE%\anaconda3\envs\eventcamera-blender\python.exe" set "PYTHON_EXE=%USERPROFILE%\anaconda3\envs\eventcamera-blender\python.exe"
+if not defined PYTHON_EXE (where python >nul 2>&1 && set "PYTHON_EXE=python")
+if not defined PYTHON_EXE (where py >nul 2>&1 && set "PYTHON_EXE=py")
+if not defined PYTHON_EXE (
+    echo [ERROR] Python not found.
+    echo         Create the conda env:  conda env create -f environment.yml
+    echo         or set a specific interpreter:  set "PYTHON_EXE=C:\path\to\python.exe"
+    pause
+    exit /b 1
+)
+echo [setup] Using Python: %PYTHON_EXE%
 
 where npm >nul 2>&1
 if errorlevel 1 (

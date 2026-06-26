@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>♪</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    /* zoom/fill mode — cover the whole window, no black bars (crops overflow). */
+    #v { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+  </style>
+</head>
+<body>
+  <video id="v" src="/egg/docchi.mp4" autoplay playsinline></video>
+  <script>
+    var v = document.getElementById('v');
+    var REDIRECT = 'https://www.youtube.com/@NakiriAyame';
+    var AT = 36; // seconds
+    var done = false;
+    function go() { if (done) return; done = true; window.location.replace(REDIRECT); }
+    v.addEventListener('timeupdate', function () { if (v.currentTime >= AT) go(); });
+    v.addEventListener('ended', go);
+    v.addEventListener('error', go); // if the video can't load, go straight to the channel
+    // We arrived here from a click, so try sound; if the browser blocks
+    // autoplay-with-sound, fall back to muted so it still plays.
+    var p = v.play();
+    if (p && p.catch) p.catch(function () { v.muted = true; v.play().catch(function () {}); });
+  </script>
+</body>
+</html>

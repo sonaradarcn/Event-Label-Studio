@@ -8,8 +8,8 @@ import "./styles.css";
 initDevLog();
 
 // Pull shared prefs (recents + UI config) from the backend into localStorage
-// before the first render, so config is the same in any browser / the desktop
-// window regardless of origin or port. Renders even if the server is offline.
+// before the first render, so config is the same in any browser regardless of
+// origin or port. Renders even if the server is offline.
 bootstrapPrefs().finally(() => {
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>

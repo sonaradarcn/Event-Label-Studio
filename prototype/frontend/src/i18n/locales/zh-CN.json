@@ -241,5 +241,9 @@
   "settings.section.shortcuts.title": "键盘快捷键",
   "settings.section.about.title": "关于",
   "settings.about.version": "版本",
-  "settings.about.desc": "事件相机点云标注工具 —— 打开、可视化、标注并导出事件流数据。"
+  "settings.about.desc": "事件相机点云标注工具 —— 打开、可视化、标注并导出事件流数据。",
+  "settings.about.docs.title": "教程文档",
+  "settings.about.docs.desc": "查看使用说明,快速了解标注与操作方法。",
+  "settings.about.github.title": "Github",
+  "settings.about.github.desc": "查看源码、获取最新进展、提交反馈与交流。"
 }

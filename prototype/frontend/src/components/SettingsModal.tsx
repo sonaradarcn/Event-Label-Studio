@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
+import { BookOpen, Github } from "lucide-react";
 import { useI18n } from "../i18n/I18nContext";
 import { useTheme } from "../theme/ThemeContext";
 import { listCache, deleteDataset, revealDataset, exportDatasetDefault, type CacheEntry } from "../api/client";
 import { useConfirm } from "./ConfirmDialog";
+import eggMask from "../assets/easter-egg.png";
+
+const GITHUB_URL = "https://github.com/sonaradarcn/Event-Label-Studio";
 
 type Props = {
   visible: boolean;
@@ -319,10 +323,45 @@ export function SettingsModal({
           {section === "about" && (
             <div className="settingsContent">
               <div className="settingsSectionTitle">{t("settings.section.about.title")}</div>
-              <div className="settingsAbout">
-                <div className="settingsAboutName">Event Label Studio</div>
-                <div className="settingsAboutVersion">{t("settings.about.version")} {__APP_VERSION__}</div>
-                <p className="settingsAboutDesc">{t("settings.about.desc")}</p>
+              <div className="aboutWrap">
+                {/* Hero: logo + name + version + tagline */}
+                <div className="aboutHero">
+                  <div className="aboutLogo" aria-hidden="true">
+                    <svg viewBox="0 0 48 48" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="15" y="15" width="18" height="18" rx="4" />
+                      <circle cx="24" cy="24" r="4.5" />
+                      <circle cx="24" cy="24" r="1.4" fill="#fff" stroke="none" />
+                      <path d="M19 15V9 M24 15V9 M29 15V9 M19 33v6 M24 33v6 M29 33v6 M15 19H9 M15 24H9 M15 29H9 M33 19h6 M33 24h6 M33 29h6" />
+                    </svg>
+                  </div>
+                  <div className="aboutHeroText">
+                    <div className="aboutTitle">Event Label Studio</div>
+                    <span className="aboutVersionPill">v{__APP_VERSION__}</span>
+                    <p className="aboutTagline">{t("settings.about.desc")}</p>
+                  </div>
+                </div>
+
+                {/* Quick links */}
+                <div className="aboutCards">
+                  <a className="aboutCard" href={`${GITHUB_URL}#readme`} target="_blank" rel="noreferrer">
+                    <span className="aboutCardIcon docs"><BookOpen size={20} /></span>
+                    <div className="aboutCardTitle">{t("settings.about.docs.title")}</div>
+                    <div className="aboutCardDesc">{t("settings.about.docs.desc")}</div>
+                  </a>
+                  <a className="aboutCard" href={GITHUB_URL} target="_blank" rel="noreferrer">
+                    <span className="aboutCardIcon gh"><Github size={20} /></span>
+                    <div className="aboutCardTitle">{t("settings.about.github.title")}</div>
+                    <div className="aboutCardDesc">{t("settings.about.github.desc")}</div>
+                  </a>
+                </div>
+
+                {/* Easter egg: grey line-art figure (pink-red on hover) that opens a hidden page. */}
+                <div
+                  className="aboutEgg"
+                  style={{ WebkitMaskImage: `url(${eggMask})`, maskImage: `url(${eggMask})` }}
+                  onClick={() => { window.location.href = "/egg.html"; }}
+                  aria-hidden="true"
+                />
               </div>
             </div>
           )}

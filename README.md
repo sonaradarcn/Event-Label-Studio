@@ -5,7 +5,7 @@
 <p align="center">An interactive labelling tool for event-camera (neuromorphic) point-cloud data.</p>
 
 <p align="center">
-	<a href="#"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg"></a>
+	<a href="#"><img src="https://img.shields.io/badge/version-v0.1.1-blue.svg"></a>
 	<a href="#"><img src="https://img.shields.io/badge/python-3.10-3776AB.svg?logo=python&logoColor=white"></a>
 	<a href="#"><img src="https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=white"></a>
 	<a href="#"><img src="https://img.shields.io/badge/Three.js-0.182-000000.svg?logo=three.js&logoColor=white"></a>
@@ -20,7 +20,7 @@ Event Label Studio is an interactive tool for **labelling event-camera (neuromor
 This tool addresses that gap with a complete workflow — **load, visualise, filter and efficiently label** — backed by smart assists (a connected-components "wand" and semi-automatic propagation tracking) that do the heavy lifting and leave only the fine-tuning to the human.
 
 * Decoupled front/back end: frontend `React 19 + TypeScript + Vite + Three.js`, backend `Flask + NumPy/SciPy`.
-* One page, three ways to open it: a browser, a built-in desktop window (`pywebview`, Windows/macOS/Linux), or a one-click script.
+* Runs in any modern browser; a one-click script launches the backend and frontend together.
 * Built for scale: multi-chunk GPU rendering + LOD + time paging — **handles 40M+ events on a single machine**.
 * Smart assists: voxel connected-components wand and semi-automatic propagation tracking (classical algorithms, human-in-the-loop).
 
@@ -41,7 +41,7 @@ This tool addresses that gap with a complete workflow — **load, visualise, fil
 13. **Data export** — export `NPZ` (lossless, full), `PLY` / `CSV` (preview and full), and a reloadable `project.json` project file.
 14. **Cache & project management** — manage opened recordings (export, delete, reveal in folder) for auto-save and project management.
 15. **Settings center** — General / Cache / Display / Shortcuts / About; central switches for language, theme, GPU and point size.
-16. **Cross-platform desktop** — a `pywebview` native window; config / recent files are shared across browsers and the window (server-side shared prefs).
+16. **Shared preferences** — config and recent files are persisted server-side, so they stay consistent across browsers and machines.
 17. **Performance & large-scale rendering** — multi-chunk `THREE.Points` + Uint8 colour buffers + async chunked builds + LOD + time paging for smooth interaction at tens of millions of events.
 18. **Usability** — English/Chinese i18n, light/dark theme, keyboard shortcuts, undo / redo, foolproof disabled states, a unified confirm dialog, and a **live FPS readout** in the bottom-right status bar.
 
@@ -51,13 +51,11 @@ This tool addresses that gap with a complete workflow — **load, visualise, fil
 |---|---|
 | Frontend | React 19 · TypeScript · Vite · Three.js · in-house i18n / theming / binary point-cloud protocol |
 | Backend | Python 3.10 · Flask · NumPy · SciPy · event-stream (decode) · imageio + ffmpeg (video) |
-| Desktop | pywebview (Windows WebView2 / macOS WKWebView / Linux WebKitGTK) |
 
 ## Requirements
 
 * Python 3.10 (recommended: create the conda env `eventcamera-blender` from `environment.yml`)
 * Node.js ≥ 18 (with npm)
-* Desktop mode also needs `pywebview` (Linux additionally needs the system WebKitGTK packages — see `prototype/backend/requirements-desktop.txt`)
 
 ## Quick Start
 
@@ -83,9 +81,6 @@ npm run dev
 ```bash
 cd prototype/frontend && npm run build      # outputs to dist/
 python prototype/backend/app.py             # open http://127.0.0.1:5050
-
-# Or open as a native desktop window (pip install -r prototype/backend/requirements-desktop.txt first)
-python prototype/backend/desktop.py
 ```
 
 **Windows one-click** — from the repo root, run `run.bat` (browser mode).
@@ -102,8 +97,7 @@ Event-Label-Studio/
 │     ├─ cache_store.py        # decode cache / LOD / chunking
 │     ├─ labels.py             # label read/write / undo-redo
 │     ├─ tracks.py             # semi-automatic propagation tracking
-│     ├─ video_render.py       # video / single-frame rendering
-│     └─ desktop.py            # pywebview desktop window
+│     └─ video_render.py       # video / single-frame rendering
 ├─ environment.yml             # conda environment definition
 ├─ run.bat                     # Windows one-click launcher
 └─ README.md

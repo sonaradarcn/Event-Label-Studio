@@ -241,5 +241,9 @@
   "settings.section.shortcuts.title": "Keyboard shortcuts",
   "settings.section.about.title": "About",
   "settings.about.version": "Version",
-  "settings.about.desc": "Event-camera point-cloud labelling tool — open, visualise, label and export event-stream data."
+  "settings.about.desc": "Event-camera point-cloud labelling tool — open, visualise, label and export event-stream data.",
+  "settings.about.docs.title": "Documentation",
+  "settings.about.docs.desc": "Read the user guide to get up to speed on labelling and the controls.",
+  "settings.about.github.title": "Github",
+  "settings.about.github.desc": "Browse the source, follow updates, and share feedback."
 }

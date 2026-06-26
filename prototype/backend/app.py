@@ -37,16 +37,16 @@ ALLOWED_ROOTS = [RECORDINGS_DIR.resolve(), CACHE_DIR.resolve(), OUTPUT_DIR.resol
 
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
-# ─────────── Serve the built frontend (single-origin / desktop window) ───────────
-# In dev the Vite server (:5173) proxies /api to here. For the packaged desktop
-# app there is no Vite — Flask serves the built SPA from frontend/dist so the
+# ─────────── Serve the built frontend (single-origin / production) ───────────
+# In dev the Vite server (:5173) proxies /api to here. In production there is no
+# Vite — Flask serves the built SPA from frontend/dist so the
 # whole UI + API live on one origin. /api/* keeps its own (more specific) rules;
 # this catch-all only returns static assets or the SPA index fallback.
 FRONTEND_DIST = PROTOTYPE_ROOT / "frontend" / "dist"
 
 # Windows maps .js -> text/plain in the registry, which Python's mimetypes picks
-# up; Chromium/WebView2 then refuses to run the ES-module bundle (strict MIME)
-# and the window stays blank/black. Force correct types for the static assets.
+# up; the browser then refuses to run the ES-module bundle (strict MIME) and the
+# page stays blank. Force correct types for the static assets.
 for _ext, _type in (
     (".js", "text/javascript"),
     (".mjs", "text/javascript"),
@@ -73,8 +73,8 @@ def _serve_spa(path: str):
 
 
 # ─────────── Shared client prefs (recents + UI config) ───────────
-# localStorage is per-origin, so the dev browser (:5173) and the desktop window
-# (127.0.0.1:<random-port>) cannot see each other's recents/settings. The
+# localStorage is per-origin, so the dev browser (:5173) and the production page
+# (:5050), or two different browsers, cannot see each other's recents/settings. The
 # backend is the one thing every client shares, so we persist those prefs here
 # as a simple JSON key→value bag. The frontend seeds localStorage from this on
 # boot and mirrors writes back, so config is the same wherever it's opened.

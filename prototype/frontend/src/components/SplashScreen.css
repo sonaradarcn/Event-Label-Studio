@@ -1,0 +1,154 @@
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  cursor: pointer;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+
+  /* Themeable tokens — dark defaults; overridden for .theme-light below. */
+  --sp-bg: radial-gradient(120% 120% at 50% 38%, #0c1326 0%, #06080f 68%, #000 100%);
+  --sp-grid: rgba(96, 150, 255, 0.07);
+  --sp-glow: radial-gradient(circle, rgba(80, 170, 255, 0.28), rgba(180, 90, 255, 0.12) 42%, transparent 70%);
+  --sp-title: linear-gradient(180deg, #eef4ff 0%, #7fb3ff 55%, #c08bff 100%);
+  --sp-title-shadow: 0 0 26px rgba(120, 170, 255, 0.35);
+  --sp-tagline: rgba(186, 204, 236, 0.72);
+  --sp-dot-on: #6fe0ff;
+  --sp-dot-off: #c98bff;
+
+  background: var(--sp-bg);
+}
+
+/* Light theme: cool but bright — soft blue wash, deeper gradient title. */
+.theme-light .splash {
+  --sp-bg: radial-gradient(120% 120% at 50% 38%, #f5f9ff 0%, #e4edfb 60%, #d2e0f3 100%);
+  --sp-grid: rgba(70, 120, 210, 0.10);
+  --sp-glow: radial-gradient(circle, rgba(90, 150, 255, 0.32), rgba(150, 90, 255, 0.16) 42%, transparent 70%);
+  --sp-title: linear-gradient(180deg, #2f6fe6 0%, #4f8bff 48%, #8a4ff0 100%);
+  --sp-title-shadow: 0 0 18px rgba(90, 140, 255, 0.22);
+  --sp-tagline: rgba(58, 84, 132, 0.8);
+  --sp-dot-on: #1aa6d6;
+  --sp-dot-off: #8a4fe0;
+}
+
+.splashLeaving {
+  opacity: 0;
+  transform: scale(1.05);
+  pointer-events: none;
+}
+
+/* Drifting event-camera-style grid, masked to a soft vignette. */
+.splashGrid {
+  position: absolute;
+  inset: -2px;
+  background-image:
+    linear-gradient(var(--sp-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sp-grid) 1px, transparent 1px);
+  background-size: 42px 42px;
+  -webkit-mask-image: radial-gradient(circle at 50% 44%, #000 0%, transparent 72%);
+  mask-image: radial-gradient(circle at 50% 44%, #000 0%, transparent 72%);
+  animation: splashGridDrift 7s linear infinite;
+}
+@keyframes splashGridDrift {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 42px 42px, 42px 42px; }
+}
+
+/* Pulsing nebula glow behind the title. */
+.splashGlow {
+  position: absolute;
+  width: min(640px, 90vw);
+  height: min(640px, 90vw);
+  border-radius: 50%;
+  background: var(--sp-glow);
+  filter: blur(22px);
+  animation: splashPulse 2.8s ease-in-out infinite;
+}
+@keyframes splashPulse {
+  0%, 100% { transform: scale(0.9);  opacity: 0.65; }
+  50%      { transform: scale(1.12); opacity: 1; }
+}
+
+.splashContent {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 0 16px;
+}
+
+.splashTitle {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.01em;
+  font-size: clamp(30px, 6.5vw, 72px);
+  font-weight: 800;
+  letter-spacing: 2px;
+  line-height: 1.1;
+}
+.splashChar {
+  display: inline-block;
+  background: var(--sp-title);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: var(--sp-title-shadow);
+  opacity: 0;
+  transform: translateY(0.55em) scale(0.96);
+  filter: blur(7px);
+  animation: splashCharIn 0.62s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes splashCharIn {
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+/* Glowing accent line that grows out under the title. */
+.splashLine {
+  height: 2px;
+  width: 0;
+  margin: 20px auto 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #5aa0ff, #c08bff, transparent);
+  box-shadow: 0 0 14px rgba(120, 170, 255, 0.55);
+  animation: splashLineGrow 0.9s ease forwards;
+  animation-delay: 0.85s;
+}
+@keyframes splashLineGrow { to { width: min(440px, 82vw); } }
+
+.splashTagline {
+  margin-top: 16px;
+  font-size: clamp(11px, 1.6vw, 14px);
+  letter-spacing: 5px;
+  text-transform: uppercase;
+  color: var(--sp-tagline);
+  opacity: 0;
+  animation: splashFadeUp 0.8s ease forwards;
+  animation-delay: 1.05s;
+}
+@keyframes splashFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Twinkling ON / OFF "events". */
+.splashDots { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.splashDot {
+  position: absolute;
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  opacity: 0;
+  animation: splashTwinkle 2.4s ease-in-out infinite;
+}
+.splashDot.on  { background: var(--sp-dot-on);  box-shadow: 0 0 8px var(--sp-dot-on); }
+.splashDot.off { background: var(--sp-dot-off); box-shadow: 0 0 8px var(--sp-dot-off); }
+@keyframes splashTwinkle {
+  0%, 100% { opacity: 0; transform: scale(0.4); }
+  50%      { opacity: 0.9; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splashGrid, .splashGlow, .splashDot { animation: none; }
+  .splashChar { animation-duration: 0.3s; filter: none; }
+}

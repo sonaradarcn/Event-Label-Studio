@@ -1,7 +1,7 @@
 // Shared client preferences (recents + UI config).
 //
-// localStorage is per-origin, so the dev browser, the pywebview desktop window
-// (which runs on a different — and changing — port), and any other browser each
+// localStorage is per-origin, so the dev browser (:5173), the production page
+// (:5050), and any other browser each
 // have their own isolated copy. The Python backend is the single shared point,
 // so we mirror a whitelist of pref keys to it: on boot we pull the server copy
 // into localStorage *before React renders* (so the existing localStorage-based
@@ -66,7 +66,7 @@ export async function bootstrapPrefs(): Promise<void> {
     }
     // First-run migration: upload any pref this client already had locally but
     // the server doesn't know yet (so existing recents/config aren't lost and
-    // become visible to the desktop window / other browsers).
+    // become visible to other browsers / origins).
     const migrate: Record<string, string> = {};
     for (const k of SHARED_KEYS) {
       if (server[k] == null) {
