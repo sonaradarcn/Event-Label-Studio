@@ -1,5 +1,4 @@
-import { BoxSelect, Eraser, FileDown, FlipHorizontal2, FlipVertical2, FolderOpen, Hand, Redo2, RotateCw, Save, Undo2, SquareDashedBottom, Circle, Spline, Wand2, ScanLine } from "lucide-react";
-import { useRef } from "react";
+import { BoxSelect, Eraser, FlipHorizontal2, FlipVertical2, Hand, Redo2, RotateCw, Save, Undo2, SquareDashedBottom, Circle, Spline, Wand2, ScanLine } from "lucide-react";
 import { useI18n } from "../i18n/I18nContext";
 import type { ToolMode } from "../pointcloud/PointCloudView";
 
@@ -40,7 +39,7 @@ type Props = {
 };
 
 export function ToolOptionsBar({
-  onFileUpload, onLoad, onUndo, onRedo, onExport, onClear,
+  onLoad, onUndo, onRedo, onClear,
   onPaintRange, onSelectRanges, viewMode, onViewMode, pointSizeScale, setPointSizeScale, datasetId,
   toolMode, brushRadius, selectThrough, setToolMode, setBrushRadius, setSelectThrough,
   xyRotation, rotateXyView, xyFlipY, toggleXyFlipY, xyFlipX, toggleXyFlipX,
@@ -49,24 +48,11 @@ export function ToolOptionsBar({
   wandHasSeed, applyWandParams,
 }: Props) {
   const { t } = useI18n();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) {
-      onFileUpload(file);
-      e.target.value = "";
-    }
-  }
 
   return (
     <div className="toolOptionsBar">
-      <input ref={fileInputRef} type="file" style={{ display: "none" }} accept=".aedat,.aedat4,.raw,.h5,.hdf5,.es,.bin" onChange={handleFileChange} />
-
-      <button onClick={() => fileInputRef.current?.click()} title={t("menu.file.open")}><FolderOpen size={14} /> {t("toolbar.open")}</button>
       <button onClick={onUndo} title="Ctrl+Z"><Undo2 size={14} /> {t("toolbar.undo")}</button>
       <button onClick={onRedo} title="Ctrl+Y"><Redo2 size={14} /> {t("toolbar.redo")}</button>
-      <button onClick={onExport} title={t("toolbar.export")}><FileDown size={14} /> {t("toolbar.export")}</button>
       <button onClick={onClear} title="Del"><Eraser size={14} /> {t("toolbar.clear")}</button>
 
       <span style={{ color: "var(--text-muted)", fontSize: 11 }}>|</span>

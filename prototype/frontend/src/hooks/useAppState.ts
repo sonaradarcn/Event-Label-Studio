@@ -1,11 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { command, exportLabels, fetchChunk, fetchChunkManifest, fetchPoints, getLabelSchema, getStats, getTask, listRecordings, openDatasetAsync, propagateTrack, renderVideoStart, renderVideoUrl, selectComponent as selectComponentApi, updateLabelsBinary, updateLabelsByFilter, uploadFile, type ExportParams, type RenderVideoParams } from "../api/client";
+import { command, exportLabels, fetchChunk, fetchChunkManifest, fetchPoints, getLabelSchema, getStats, getTask, listCache, listDatasetIds, listRecordings, openDatasetAsync, propagateTrack, renderVideoStart, renderVideoUrl, selectComponent as selectComponentApi, updateLabelsBinary, updateLabelsByFilter, uploadFile, type ExportParams, type RenderVideoParams } from "../api/client";
 import type { ChunkManifest, ChunkManifestEntry } from "../api/types";
 import type { DatasetMeta, LabelClass, PointPayload, Recording } from "../api/types";
 import type { PointInfo, ToolMode, SelectionOp, FilterPreview } from "../pointcloud/PointCloudView";
 import type { TrackCandidate } from "../api/client";
+import { captureView, captureSvgView, copyDataUrlToClipboard, printDataUrl, printSvgMarkup } from "../pointcloud/capture";
 
 export type ProgressState = { visible: boolean; value: number; title: string; detail: string; elapsed: number; indeterminate?: boolean };
+// Naming dialog shown when importing a recording file (the name becomes the
+// project's cache id, so one recording can be imported as several projects).
+export type ImportPromptState = { visible: boolean; fileName: string; suggested: string; existingNames: string[] };
+
+// Derive the file stem and, if a project of that name already exists, suffix it
+// (-2, -3, …) so the suggested default never silently collides with a project.
+function deriveStem(fileName: string): string {
+  return (fileName.split(/[\\/]/).pop() ?? fileName).replace(/\.[^.]+$/, "");
+}
+function uniqueProjectName(base: string, existing: string[]): string {
+  const taken = new Set(existing);
+  if (!taken.has(base)) return base;
+  let i = 2;
+  while (taken.has(`${base}-${i}`)) i++;
+  return `${base}-${i}`;
+}
 // Propagation-tracking session surfaced to the UI. Heavy data (the accepted
 // event set + the next-propagation seed) lives in refs; this is just what the
 // TrackPanel renders.
@@ -44,7 +61,11 @@ export function useAppState() {
   // colorMode "time" tints unlabelled events by timestamp so motion is visible;
   // pointSizeScale multiplies rendered point size for sparse/dense legibility.
   const [colorMode, setColorMode] = useState<"polarity" | "time">("polarity");
-  const [pointSizeScale, setPointSizeScale] = useState(1);
+  // Persisted so a chosen point size survives a page reload / reopen.
+  const [pointSizeScale, setPointSizeScale] = useState<number>(() => {
+    const v = parseFloat(localStorage.getItem("display.pointSizeScale") ?? "");
+    return Number.isFinite(v) && v > 0 ? v : 1;
+  });
   // Display settings (visual only). unlabeledColor tints events with no label;
   // polarityContrast (0..1) controls how strongly ON/OFF polarity brightens /
   // darkens the base colour in the "polarity" colour scheme.
@@ -59,9 +80,14 @@ export function useAppState() {
   });
   useEffect(() => { localStorage.setItem("display.unlabeledColor", unlabeledColor); }, [unlabeledColor]);
   useEffect(() => { localStorage.setItem("display.polarityContrast", String(polarityContrast)); }, [polarityContrast]);
+  useEffect(() => { localStorage.setItem("display.pointSizeScale", String(pointSizeScale)); }, [pointSizeScale]);
   // Settings dialog visibility.
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const openSettings = useCallback(() => setSettingsVisible(true), []);
+  const [settingsSection, setSettingsSection] = useState<"display" | "general" | "cache" | "shortcuts" | "about">("general");
+  const openSettings = useCallback((section: "display" | "general" | "cache" | "shortcuts" | "about" = "general") => {
+    setSettingsSection(section);
+    setSettingsVisible(true);
+  }, []);
   const closeSettings = useCallback(() => setSettingsVisible(false), []);
   // Propagation tracking. UI state in `track`; the (potentially large) accepted
   // event set + next seed live in refs to avoid huge React updates.
@@ -94,6 +120,9 @@ export function useAppState() {
     setMessageBox({ visible: true, title, body, kind, actions });
   }, []);
   const hideMessage = useCallback(() => setMessageBox((m) => ({ ...m, visible: false })), []);
+  // Name-project dialog state (the picked file waits in a ref until confirmed).
+  const [importPrompt, setImportPrompt] = useState<ImportPromptState>({ visible: false, fileName: "", suggested: "", existingNames: [] });
+  const pendingFileRef = useRef<File | null>(null);
   const [stats, setStats] = useState<StatsData>(null);
   const [newLabelName, setNewLabelName] = useState("");
   const [pointInfo, setPointInfo] = useState<PointInfo | null>(null);
@@ -137,37 +166,33 @@ export function useAppState() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [frameWindowUs, setFrameWindowUs] = useState(33333); // 33ms = matches default video render frame window
 
-  // Recently opened files (persisted in localStorage).
-  const RECENTS_KEY = "recent_files";
-  const RECENTS_MAX = 8;
-  const [recents, setRecents] = useState<{ path: string; name: string }[]>(() => {
+  // "Recent Projects" is auto-scanned from the cache (every openable project),
+  // most-recently-modified first — not a manually tracked list. So a project
+  // imported anywhere (UI, CLI, MCP) shows up here. `project` is the cache id;
+  // re-opening uses it to load the existing cache by name (no re-decode).
+  const RECENTS_MAX = 10;
+  const [recents, setRecents] = useState<{ path: string; name: string; project?: string }[]>([]);
+  const refreshRecents = useCallback(async () => {
     try {
-      const raw = localStorage.getItem(RECENTS_KEY);
-      return raw ? (JSON.parse(raw) as { path: string; name: string }[]) : [];
-    } catch { return []; }
-  });
-  const pushRecent = useCallback((path: string, name: string) => {
-    setRecents((prev) => {
-      const next = [{ path, name }, ...prev.filter((r) => r.path !== path)].slice(0, RECENTS_MAX);
-      try { localStorage.setItem(RECENTS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  }, []);
-  const clearRecents = useCallback(() => {
-    setRecents([]);
-    try { localStorage.removeItem(RECENTS_KEY); } catch { /* ignore */ }
+      const entries = await listCache();
+      entries.sort((a, b) => b.modified - a.modified);
+      setRecents(entries.slice(0, RECENTS_MAX).map((e) => ({
+        path: e.source_path, name: e.dataset_id, project: e.dataset_id,
+      })));
+    } catch { /* backend down: keep the current list */ }
   }, []);
 
   useEffect(() => {
     listRecordings().then(setRecordings).catch((error) => setStatus(String(error)));
-  }, []);
+    refreshRecents();
+  }, [refreshRecents]);
 
   const refreshStats = useCallback(async () => {
     if (!datasetId) return;
     try { setStats(await getStats(datasetId)); } catch { /* ignore */ }
   }, [datasetId]);
 
-  const handleOpen = useCallback(async (path: string) => {
+  const handleOpen = useCallback(async (path: string, name?: string) => {
     const startedAt = performance.now();
     setStatus("Opening dataset...");
     setProgress({ visible: true, value: 0.02, title: "Opening dataset", detail: "Starting backend cache task", elapsed: 0 });
@@ -175,7 +200,7 @@ export function useAppState() {
     // progress dialog would otherwise sit at 2% forever — fail loudly instead.
     let task: { task_id: string };
     try {
-      task = await openDatasetAsync(path);
+      task = await openDatasetAsync(path, name);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       setProgress({ visible: false, value: 0, title: "", detail: "", elapsed: 0 });
@@ -209,9 +234,8 @@ export function useAppState() {
           setLabels((await getLabelSchema(current.dataset_id)).labels);
           setProgress({ visible: false, value: 1, title: "Dataset ready", detail: "Cache ready", elapsed });
           setStatus(`Dataset ready in ${elapsed.toFixed(1)}s`);
-          // Track in recents (use the original path argument, not dataset_id).
-          const fileName = path.split(/[\\/]/).pop() ?? path;
-          pushRecent(path, fileName);
+          // Re-scan the cache so the just-opened project appears in Recent Projects.
+          refreshRecents();
           refreshStats();
         }
         if (current.status === "failed") {
@@ -224,7 +248,7 @@ export function useAppState() {
         setProgress({ visible: false, value: 0, title: "", detail: "", elapsed });
       }
     }, 350);
-  }, [refreshStats, pushRecent, showMessage]);
+  }, [refreshStats, refreshRecents, showMessage]);
 
   const autoOpenRef = useRef(false);
   useEffect(() => {
@@ -1112,6 +1136,37 @@ export function useAppState() {
   }, [datasetId, showMessage]);
   const closeExport = useCallback(() => setExportVisible(false), []);
 
+  // Screenshot / Print of the current view (3D or XY, whichever is active).
+  // Screenshot goes to the clipboard (image/png) rather than a file.
+  const screenshotView = useCallback(async () => {
+    if (!datasetId) { showMessage("Screenshot", "Open a recording first.", "error"); return; }
+    const url = captureView({ transparent: false });
+    if (!url) { showMessage("Screenshot failed", "Could not capture the view.", "error"); return; }
+    try {
+      await copyDataUrlToClipboard(url);
+      setStatus("Screenshot copied to clipboard");
+    } catch (e) {
+      showMessage("Screenshot failed", `Could not copy to clipboard: ${e instanceof Error ? e.message : String(e)}`, "error");
+    }
+  }, [datasetId, showMessage]);
+
+  const [printVisible, setPrintVisible] = useState(false);
+  const openPrint = useCallback(() => {
+    if (!datasetId) { showMessage("Print", "Open a recording first.", "error"); return; }
+    setPrintVisible(true);
+  }, [datasetId, showMessage]);
+  const cancelPrint = useCallback(() => setPrintVisible(false), []);
+  const confirmPrint = useCallback((orientation: "landscape" | "portrait") => {
+    setPrintVisible(false);
+    // Vector PDF: points as a high-res image layer, axes/labels as true SVG.
+    const svg = captureSvgView();
+    if (svg) { printSvgMarkup(svg, orientation); return; }
+    // Fallback to a transparent raster if the SVG export is unavailable.
+    const url = captureView({ transparent: true });
+    if (!url) { showMessage("Print failed", "Could not capture the view.", "error"); return; }
+    printDataUrl(url, orientation);
+  }, [showMessage]);
+
   const startExport = useCallback(async (params: ExportParams) => {
     if (!datasetId) return;
     setExportVisible(false);
@@ -1189,6 +1244,8 @@ export function useAppState() {
     const color = colors[newId % colors.length];
     const updated = [...labels, { id: newId, name: newLabelName.trim(), color }];
     setLabels(updated);
+    // First label in an empty project becomes the active one so it's usable at once.
+    if (labels.length === 0) setActiveLabel(newId);
     setNewLabelName("");
     if (datasetId) {
       fetch(`/api/datasets/${datasetId}/labels/schema`, {
@@ -1296,6 +1353,22 @@ export function useAppState() {
     setPlaying(false);
   }, [startUs, endUs, frameWindowUs]);
 
+  // Select every loaded point (the whole point cloud). selectedIds holds global
+  // event ids, so we union each loaded chunk's event_id (or the single payload).
+  const selectAll = useCallback(() => {
+    if (!datasetId) return;
+    const ids = new Set<number>();
+    for (const p of chunksMap.values()) {
+      const ev = p.event_id;
+      for (let i = 0; i < p.count; i++) ids.add(Number(ev[i]));
+    }
+    if (ids.size === 0 && payload) {
+      for (let i = 0; i < payload.count; i++) ids.add(Number(payload.event_id[i]));
+    }
+    setSelectedIds(ids);
+    setStatus(`Selected ${ids.size.toLocaleString()} events`);
+  }, [datasetId, chunksMap, payload]);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
     if (e.ctrlKey && e.key === "z") { e.preventDefault(); runCommand("undo"); }
@@ -1314,20 +1387,47 @@ export function useAppState() {
     else if (e.key === "c" && viewMode !== "3d") setToolMode("circle"); // circle is XY-only
     else if (e.key === "l") setToolMode("lasso");
     else if (e.key === "w" && viewMode === "3d") setToolMode("wand");   // wand is 3D-only
-    else if (e.key === "a" && e.ctrlKey) { e.preventDefault(); setSelectedIds(new Set()); } // Ctrl+A = deselect all
-  }, [runCommand, loadPoints, labels, assign, selectedIds, selectByRanges, clearByFilter, viewMode, toolMode, togglePlayback]);
+    else if (e.key === "a" && e.ctrlKey) { e.preventDefault(); selectAll(); }       // Ctrl+A = select all
+    else if (e.key === "Escape") {
+      // Esc = deselect — but don't steal it from an open dialog (dialogs close on
+      // Esc; their state is still true on this same event, so we bail out).
+      if (settingsVisible || printVisible || renderVideoVisible || exportVisible ||
+          importPrompt.visible || messageBox.visible || document.querySelector(".confirmOverlay")) return;
+      setSelectedIds(new Set());
+    }
+  }, [runCommand, loadPoints, labels, assign, selectedIds, selectByRanges, clearByFilter, viewMode, toolMode, togglePlayback, selectAll, settingsVisible, printVisible, renderVideoVisible, exportVisible, importPrompt, messageBox]);
 
+  // Importing a file no longer opens it straight away: it asks the user to name
+  // the project first (the name becomes the cache id). The file waits in a ref
+  // until confirmImport / cancelImport.
   const handleFileUpload = useCallback(async (file: File) => {
+    pendingFileRef.current = file;
+    let existing: string[] = [];
+    try { existing = await listDatasetIds(); } catch { /* offline: no suggestions */ }
+    const suggested = uniqueProjectName(deriveStem(file.name), existing);
+    setImportPrompt({ visible: true, fileName: file.name, suggested, existingNames: existing });
+  }, []);
+
+  const confirmImport = useCallback(async (name: string) => {
+    const file = pendingFileRef.current;
+    pendingFileRef.current = null;
+    setImportPrompt((p) => ({ ...p, visible: false }));
+    if (!file) return;
     setStatus(`Uploading ${file.name}...`);
     try {
       const result = await uploadFile(file);
-      setStatus(`File uploaded, opening dataset...`);
-      await handleOpen(result.path);
+      setStatus("File uploaded, opening project...");
+      await handleOpen(result.path, name);
       setRecordings(await listRecordings());
     } catch (error) {
       setStatus(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, [handleOpen]);
+
+  const cancelImport = useCallback(() => {
+    pendingFileRef.current = null;
+    setImportPrompt((p) => ({ ...p, visible: false }));
+  }, []);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -1351,14 +1451,16 @@ export function useAppState() {
     polarity, sample, startUs, endUs, xMin, xMax, yMin, yMax,
     colorMode, pointSizeScale,
     unlabeledColor, setUnlabeledColor, polarityContrast, setPolarityContrast,
-    settingsVisible, openSettings, closeSettings,
+    settingsVisible, settingsSection, openSettings, closeSettings,
     selectedIds, status, progress, stats, newLabelName, pointInfo, tooltipRef,
     toolMode, brushRadius, selectThrough,
     xyRotation, rotateXyView, xyFlipY, toggleXyFlipY, xyFlipX, toggleXyFlipX,
-    recents, clearRecents, closeProject,
+    recents, refreshRecents, closeProject,
+    importPrompt, confirmImport, cancelImport,
     messageBox, hideMessage, showMessage,
     renderVideoVisible, openRenderVideo, closeRenderVideo, startRenderVideo,
     exportVisible, openExport, closeExport, startExport,
+    screenshotView, printVisible, openPrint, cancelPrint, confirmPrint,
     currentFrameUs, playing, playbackSpeed, frameWindowUs,
     histogram, visibleEventCount, timeRange, timeSliderMin, timeSliderMax, assignBusy, labelPatch,
     setActiveLabel, setViewMode, setPolarity, setSample, setColorMode, setPointSizeScale,
@@ -1368,7 +1470,7 @@ export function useAppState() {
     setToolMode, setBrushRadius, setSelectThrough,
     setCurrentFrameUs, setPlaying, setPlaybackSpeed, setFrameWindowUs,
     togglePlayback, stepForward, stepBackward, goToStart, goToEnd,
-    handleOpen, handleFileUpload, loadPoints, selectByRanges, assign, assignSingle,
+    handleOpen, handleFileUpload, loadPoints, selectByRanges, selectAll, assign, assignSingle,
     assignByFilter, clearByFilter, clearAllLabels, runCommand, addLabel, removeLabel, updateLabel,
     track, trackCreate, trackPropagate, trackUseSelectionAsSeed, trackPreviewCandidate, trackConfirmCandidate, trackCancel, trackSetDirection,
     addToSelection, removeFromSelection,

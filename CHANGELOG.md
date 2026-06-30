@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.1.2
+
+- **Projects**: name each project on import — the same recording can be imported
+  as several independent projects. New projects start with no preset labels.
+- **Project Manager** (Settings → renamed from "Cache"): rename projects; the
+  original file path is no longer shown. New entry under File → Project Manager.
+- **Recent Projects** now auto-scans the cache, so any project shows up there.
+- Terminology: "Open" → **Import**, "Recent" → **Recent Projects**.
+- **Screenshot** (copies the current 3D / XY view to the clipboard) and **Print**
+  (transparent background, page-orientation prompt; axes & labels printed as
+  crisp vector SVG in the PDF) in the File menu.
+- **Select All** (Ctrl+A) and **Esc** to deselect; the point-size setting is now
+  remembered across sessions.
+- **Collapsible** left / right panels.
+- Removed the Import / Export buttons from the toolbar (still in the File menu).
+
 ## v0.1.1
 
 - Added an animated startup splash screen (theme-adaptive, light/dark).

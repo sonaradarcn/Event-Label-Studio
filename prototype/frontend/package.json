@@ -1,6 +1,6 @@
 {
   "name": "event-label-studio",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc && vite build",

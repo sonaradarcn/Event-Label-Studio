@@ -17,14 +17,23 @@ export async function uploadFile(file: File): Promise<{ path: string }> {
   return response.json();
 }
 
-export async function openDataset(path: string): Promise<{ dataset_id: string; meta: DatasetMeta }> {
+export async function openDataset(path: string, name?: string): Promise<{ dataset_id: string; meta: DatasetMeta }> {
   const response = await fetch(`${API}/datasets/open`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path })
+    body: JSON.stringify(name ? { path, name } : { path })
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json();
+}
+
+// Existing cached project names (= cache folder ids), used to suggest a unique
+// default name and warn about collisions when importing a new file.
+export async function listDatasetIds(): Promise<string[]> {
+  const response = await fetch(`${API}/datasets`);
+  if (!response.ok) return [];
+  const metas = (await response.json()) as { dataset_id?: string }[];
+  return metas.map((m) => String(m.dataset_id ?? "")).filter(Boolean);
 }
 
 export type OpenTask = {
@@ -37,11 +46,11 @@ export type OpenTask = {
   meta?: DatasetMeta;
 };
 
-export async function openDatasetAsync(path: string): Promise<OpenTask> {
+export async function openDatasetAsync(path: string, name?: string): Promise<OpenTask> {
   const response = await fetch(`${API}/datasets/open_async`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path })
+    body: JSON.stringify(name ? { path, name } : { path })
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json();
@@ -456,6 +465,17 @@ export async function listCache(): Promise<CacheEntry[]> {
 export async function deleteDataset(id: string): Promise<void> {
   const response = await fetch(`${API}/datasets/${id}`, { method: "DELETE" });
   if (!response.ok) throw new Error(await response.text());
+}
+
+export async function renameDataset(id: string, name: string): Promise<{ ok: boolean; dataset_id?: string; error?: string }> {
+  const response = await fetch(`${API}/datasets/${id}/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  const data = (await response.json().catch(() => ({}))) as { ok?: boolean; dataset_id?: string; error?: string };
+  if (!response.ok || !data.ok) return { ok: false, error: data.error || "Rename failed" };
+  return { ok: true, dataset_id: data.dataset_id };
 }
 
 export async function revealDataset(id: string): Promise<void> {

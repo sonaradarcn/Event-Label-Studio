@@ -188,7 +188,23 @@ button, select, input { font: inherit; }
   min-height: 0;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 260px;
+  position: relative;            /* anchor the collapse toggles */
+  transition: grid-template-columns 0.18s ease;
 }
+
+/* Collapse toggles pinned to each panel's inner edge. Absolutely positioned so
+   they stay out of the grid flow and remain visible when a panel is hidden. */
+.panelToggle {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 25;
+  width: 16px; height: 52px; padding: 0; cursor: pointer; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-button); color: var(--text-secondary);
+  border: 1px solid var(--border); font-size: 13px;
+  transition: left 0.18s ease, right 0.18s ease;
+}
+.panelToggle:hover { background: var(--surface-hover); color: var(--text-primary); }
+.panelToggle.left { border-radius: 0 6px 6px 0; border-left: none; }
+.panelToggle.right { border-radius: 6px 0 0 6px; border-right: none; }
 
 /* ===== Left toolbar (vertical icons) ===== */
 .leftToolbar {
@@ -605,6 +621,10 @@ input, select { width: 100%; border: 1px solid var(--border-input); background: 
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cachePath { font-size: 11px; color: var(--text-muted); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cacheRename { display: flex; align-items: center; gap: 6px; }
+.cacheRenameInput { width: auto; flex: 1 1 auto; height: 26px; font-size: 13px;
+  font-weight: 600; padding: 0 8px; }
+.cacheRenameError { font-size: 11px; color: #e0a64a; margin-top: 4px; }
 .cacheMeta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .cacheMetaSep { color: var(--text-muted); }

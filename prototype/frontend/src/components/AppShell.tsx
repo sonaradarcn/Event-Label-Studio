@@ -1,11 +1,15 @@
+import { useEffect, useState } from "react";
 import { GpuSelectModal } from "../gpu-select/GpuSelectModal";
+import { useI18n } from "../i18n/I18nContext";
 import { MessageBox } from "./MessageBox";
+import { NameProjectModal } from "./NameProjectModal";
+import { PrintDialog } from "./PrintDialog";
 import { SettingsModal } from "./SettingsModal";
 import { RenderVideoModal } from "./RenderVideoModal";
 import { ExportModal } from "./ExportModal";
 import type { ExportParams, RenderVideoParams } from "../api/client";
 import { useGpuPreference } from "../gpu-select/useGpuPreference";
-import type { ProgressState, StatsData } from "../hooks/useAppState";
+import type { ImportPromptState, ProgressState, StatsData } from "../hooks/useAppState";
 import { LeftPanel } from "./LeftPanel";
 import { MainViewport } from "./MainViewport";
 import { MenuBar } from "./MenuBar";
@@ -75,6 +79,7 @@ type Props = {
   handleFileUpload: (file: File) => void;
   loadPoints: () => void;
   selectByRanges: () => void;
+  selectAll: () => void;
   assign: (op: "assign" | "clear") => void;
   assignSingle: (eventId: number, labelId: number, op: "assign" | "clear") => void;
   assignByFilter: () => void;
@@ -97,9 +102,17 @@ type Props = {
   toggleXyFlipY: () => void;
   xyFlipX: boolean;
   toggleXyFlipX: () => void;
-  recents: { path: string; name: string }[];
-  clearRecents: () => void;
+  recents: { path: string; name: string; project?: string }[];
+  refreshRecents: () => void;
   closeProject: () => void;
+  importPrompt: ImportPromptState;
+  confirmImport: (name: string) => void;
+  cancelImport: () => void;
+  screenshotView: () => void;
+  printVisible: boolean;
+  openPrint: () => void;
+  cancelPrint: () => void;
+  confirmPrint: (orientation: "landscape" | "portrait") => void;
   messageBox: {
     visible: boolean; title: string; body: string;
     kind: "info" | "success" | "error";
@@ -107,7 +120,8 @@ type Props = {
   };
   hideMessage: () => void;
   settingsVisible: boolean;
-  openSettings: () => void;
+  settingsSection: "display" | "general" | "cache" | "shortcuts" | "about";
+  openSettings: (section?: "display" | "general" | "cache" | "shortcuts" | "about") => void;
   closeSettings: () => void;
   unlabeledColor: string;
   setUnlabeledColor: (hex: string) => void;
@@ -149,6 +163,12 @@ type Props = {
 
 export function AppShell(props: Props) {
   const { preference: gpuPreference, gpuName, showModal: showGpuModal, options: gpuOptions, select: selectGpu, openModal: openGpuModal } = useGpuPreference();
+  const { t } = useI18n();
+  // Collapsible side panels (persisted).
+  const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem("ui.leftCollapsed") === "1");
+  const [rightCollapsed, setRightCollapsed] = useState(() => localStorage.getItem("ui.rightCollapsed") === "1");
+  useEffect(() => { localStorage.setItem("ui.leftCollapsed", leftCollapsed ? "1" : "0"); }, [leftCollapsed]);
+  useEffect(() => { localStorage.setItem("ui.rightCollapsed", rightCollapsed ? "1" : "0"); }, [rightCollapsed]);
 
   return (
     <div className="app">
@@ -156,12 +176,16 @@ export function AppShell(props: Props) {
         onOpen={props.handleOpen}
         onFileUpload={props.handleFileUpload}
         recents={props.recents}
-        clearRecents={props.clearRecents}
+        onOpenMenu={props.refreshRecents}
+        onOpenProjects={() => props.openSettings("cache")}
         closeProject={props.closeProject}
         onUndo={() => props.runCommand("undo")}
         onRedo={() => props.runCommand("redo")}
         onExport={props.openExport}
         onRenderVideo={props.openRenderVideo}
+        onScreenshot={props.screenshotView}
+        onPrint={props.openPrint}
+        onSelectAll={props.selectAll}
         onClear={() => props.assign("clear")}
         onOpenSettings={props.openSettings}
         datasetId={props.datasetId}
@@ -201,8 +225,23 @@ export function AppShell(props: Props) {
         setWandVoxelTms={props.setWandVoxelTms}
         setWandMinPts={props.setWandMinPts}
       />
-      <main className="workspace">
-        <LeftPanel
+      <main
+        className="workspace"
+        style={{ gridTemplateColumns: `${leftCollapsed ? 0 : 220}px minmax(0, 1fr) ${rightCollapsed ? 0 : 260}px` }}
+      >
+        <button
+          className="panelToggle left"
+          style={{ left: leftCollapsed ? 0 : 220 }}
+          title={leftCollapsed ? t("panel.show") : t("panel.hide")}
+          onClick={() => setLeftCollapsed((v) => !v)}
+        >{leftCollapsed ? "›" : "‹"}</button>
+        <button
+          className="panelToggle right"
+          style={{ right: rightCollapsed ? 0 : 260 }}
+          title={rightCollapsed ? t("panel.show") : t("panel.hide")}
+          onClick={() => setRightCollapsed((v) => !v)}
+        >{rightCollapsed ? "‹" : "›"}</button>
+        {leftCollapsed ? <div className="panelCollapsed" /> : <LeftPanel
           meta={props.meta}
           datasetId={props.datasetId}
           stats={props.stats}
@@ -217,7 +256,7 @@ export function AppShell(props: Props) {
           assign={props.assign}
           assignBusy={props.assignBusy}
           selectedIds={props.selectedIds}
-        />
+        />}
         <MainViewport
           payload={props.payload}
           manifest={props.manifest}
@@ -276,7 +315,7 @@ export function AppShell(props: Props) {
           trackCancel={props.trackCancel}
           trackSetDirection={props.trackSetDirection}
         />
-        <RightPanel
+        {rightCollapsed ? <div className="panelCollapsed" /> : <RightPanel
           payload={props.payload}
           visibleEventCount={props.visibleEventCount}
           selectedIds={props.selectedIds}
@@ -303,7 +342,7 @@ export function AppShell(props: Props) {
           setPolarity={props.setPolarity}
           setSample={props.setSample}
           setFilterPreview={props.setFilterPreview}
-        />
+        />}
       </main>
       <StatusBar
         status={props.status}
@@ -312,6 +351,19 @@ export function AppShell(props: Props) {
         gpuName={gpuName}
       />
       <GpuSelectModal options={gpuOptions} onSelect={selectGpu} visible={showGpuModal} />
+      <NameProjectModal
+        visible={props.importPrompt.visible}
+        fileName={props.importPrompt.fileName}
+        suggested={props.importPrompt.suggested}
+        existingNames={props.importPrompt.existingNames}
+        onConfirm={props.confirmImport}
+        onCancel={props.cancelImport}
+      />
+      <PrintDialog
+        visible={props.printVisible}
+        onChoose={props.confirmPrint}
+        onCancel={props.cancelPrint}
+      />
       <MessageBox
         visible={props.messageBox.visible}
         title={props.messageBox.title}
@@ -349,6 +401,7 @@ export function AppShell(props: Props) {
         gpuName={gpuName}
         onOpenGpuModal={openGpuModal}
         onOpenDataset={props.handleOpen}
+        initialSection={props.settingsSection}
       />
     </div>
   );

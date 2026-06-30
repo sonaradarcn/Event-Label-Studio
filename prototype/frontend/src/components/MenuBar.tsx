@@ -2,21 +2,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nContext";
 
 type Props = {
-  onOpen: (path: string) => void;
+  onOpen: (path: string, name?: string) => void;
   onFileUpload: (file: File) => void;
-  recents: { path: string; name: string }[];
-  clearRecents: () => void;
+  recents: { path: string; name: string; project?: string }[];
+  onOpenMenu?: () => void;
+  onOpenProjects: () => void;
   closeProject: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onExport: () => void;
   onRenderVideo: () => void;
+  onScreenshot: () => void;
+  onPrint: () => void;
+  onSelectAll: () => void;
   onClear: () => void;
   onOpenSettings: () => void;
   datasetId: string;
 };
 
-export function MenuBar({ onOpen, onFileUpload, recents, clearRecents, closeProject, onUndo, onRedo, onExport, onRenderVideo, onClear, onOpenSettings, datasetId }: Props) {
+export function MenuBar({ onOpen, onFileUpload, recents, onOpenMenu, onOpenProjects, closeProject, onUndo, onRedo, onExport, onRenderVideo, onScreenshot, onPrint, onSelectAll, onClear, onOpenSettings, datasetId }: Props) {
   const { t } = useI18n();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -56,7 +60,7 @@ export function MenuBar({ onOpen, onFileUpload, recents, clearRecents, closeProj
       <input ref={fileInputRef} type="file" style={{ display: "none" }} accept=".aedat,.aedat4,.raw,.h5,.hdf5,.es,.bin" onChange={handleFileChange} />
 
       {/* File */}
-      <div className="menuItem" onClick={() => setOpenMenu(openMenu === "file" ? null : "file")}>
+      <div className="menuItem" onClick={() => { const next = openMenu === "file" ? null : "file"; setOpenMenu(next); if (next === "file") onOpenMenu?.(); }}>
         {t("menu.file")}
         {openMenu === "file" && (
           <div className="menuDropdown">
@@ -72,30 +76,26 @@ export function MenuBar({ onOpen, onFileUpload, recents, clearRecents, closeProj
                     {t("menu.file.recent.empty")}
                   </div>
                 ) : (
-                  <>
-                    {recents.map((r) => (
-                      <div key={r.path} className="menuDropdownItem"
-                        onClick={(e) => { e.stopPropagation(); setOpenMenu(null); onOpen(r.path); }}
-                        title={r.path}>
-                        {r.name}
-                      </div>
-                    ))}
-                    <div className="menuSeparator" />
-                    <div className="menuDropdownItem"
-                      onClick={(e) => { e.stopPropagation(); clearRecents(); setOpenMenu(null); }}
-                      style={{ color: "var(--text-muted)" }}>
-                      {t("menu.file.recent.clear")}
+                  recents.map((r) => (
+                    <div key={`${r.path}::${r.project ?? ""}`} className="menuDropdownItem"
+                      onClick={(e) => { e.stopPropagation(); setOpenMenu(null); onOpen(r.path, r.project); }}
+                      title={r.project ? `${r.name} — ${r.path}` : r.path}>
+                      {r.name}
                     </div>
-                  </>
+                  ))
                 )}
               </div>
             </div>
+            {item(t("menu.file.projects"), onOpenProjects)}
 
             <div className="menuSeparator" />
             {item(t("menu.file.close"), closeProject, "Ctrl+W")}
             <div className="menuSeparator" />
             {item(t("menu.file.export"), onExport, "Ctrl+E")}
             {item(t("menu.file.renderVideo"), onRenderVideo)}
+            <div className="menuSeparator" />
+            {item(t("menu.file.screenshot"), onScreenshot)}
+            {item(t("menu.file.print"), onPrint)}
           </div>
         )}
       </div>
@@ -108,6 +108,7 @@ export function MenuBar({ onOpen, onFileUpload, recents, clearRecents, closeProj
             {item(t("menu.edit.undo"), onUndo, "Ctrl+Z")}
             {item(t("menu.edit.redo"), onRedo, "Ctrl+Y")}
             <div className="menuSeparator" />
+            {item(t("menu.edit.selectAll"), onSelectAll, "Ctrl+A")}
             {item(t("menu.edit.clear"), onClear, "Del")}
           </div>
         )}

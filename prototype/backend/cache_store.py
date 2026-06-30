@@ -1,14 +1,32 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from pathlib import Path
 
 import numpy as np
 
-from config import CACHE_DIR, DEFAULT_LABELS, DEFAULT_SAMPLE, DEFAULT_WINDOW_US
+from config import CACHE_DIR, DEFAULT_SAMPLE, DEFAULT_WINDOW_US
 from event_io import build_event_arrays, load_events_npz, read_es
 from sampling import time_stratified_indices
+
+# Characters illegal in a Windows path component (plus control chars).
+_FORBIDDEN_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def sanitize_dataset_id(name: str) -> str:
+    """Turn a user-supplied project name into a safe cache-folder name.
+
+    Replaces characters illegal in a path component, trims surrounding dots and
+    whitespace, caps the length, and rejects empty / dot-only names. Unicode
+    letters are kept so a project can be named e.g. ``雨天夜景``.
+    """
+    cleaned = _FORBIDDEN_NAME_CHARS.sub("_", str(name)).strip().strip(".").strip()
+    cleaned = cleaned[:120].strip()
+    if not cleaned or cleaned in (".", ".."):
+        raise ValueError(f"invalid project name: {name!r}")
+    return cleaned
 
 
 class CacheStore:
@@ -25,9 +43,17 @@ class CacheStore:
     def dataset_dir(self, dataset_id: str) -> Path:
         return self.cache_dir / dataset_id
 
-    def open_dataset(self, source: Path, progress=None) -> dict:
+    def open_dataset(self, source: Path, progress=None, dataset_id: str | None = None) -> dict:
+        """Decode ``source`` into a cache folder and return its meta.
+
+        ``dataset_id`` is the project name (and the cache-folder name). When
+        omitted it falls back to the source file stem (legacy behaviour). Passing
+        an explicit name lets the same source file be imported as several
+        independent projects, and lets an already-cached project be re-opened by
+        name without re-decoding (the cache-hit branch below).
+        """
         progress = progress or (lambda *_args, **_kwargs: None)
-        dataset_id = source.stem
+        dataset_id = sanitize_dataset_id(dataset_id) if dataset_id else source.stem
         target = self.dataset_dir(dataset_id)
         target.mkdir(parents=True, exist_ok=True)
         meta_path = target / "meta.json"
@@ -60,8 +86,9 @@ class CacheStore:
         else:
             progress("cache_hit", 0.7, "Using existing cache")
         if not schema_path.exists():
-            progress("schema", 0.9, "Writing default label schema")
-            schema_path.write_text(json.dumps({"labels": DEFAULT_LABELS}, indent=2, ensure_ascii=False), encoding="utf-8")
+            # New projects start with NO preset labels — the user adds their own.
+            progress("schema", 0.9, "Writing empty label schema")
+            schema_path.write_text(json.dumps({"labels": []}, indent=2, ensure_ascii=False), encoding="utf-8")
         progress("labels", 0.95, "Preparing label store")
         # Creates labels.npy (migrating an old labels.snapshot.npz if present,
         # else a fresh all-unlabelled array).
@@ -199,6 +226,34 @@ class CacheStore:
 
     def save_schema(self, dataset_id: str, schema: dict) -> None:
         (self.dataset_dir(dataset_id) / "label_schema.json").write_text(json.dumps(schema, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def rename_dataset(self, dataset_id: str, new_id: str) -> dict:
+        """Rename a project (its cache folder) and update meta.json's dataset_id.
+
+        Raises ValueError for an invalid / already-taken name, FileNotFoundError
+        if the source is missing, and PermissionError/OSError if the folder is
+        locked (e.g. the dataset is currently open and memory-mapped).
+        """
+        new_id = sanitize_dataset_id(new_id)
+        if new_id == dataset_id:
+            return self.meta(dataset_id)
+        src = self.dataset_dir(dataset_id)
+        dst = self.dataset_dir(new_id)
+        if not src.is_dir():
+            raise FileNotFoundError(f"unknown dataset: {dataset_id}")
+        if dst.exists():
+            raise ValueError(f"a project named {new_id!r} already exists")
+        with self._lock(dataset_id):
+            src.rename(dst)  # atomic move within the cache dir (fails if locked)
+        meta_path = dst / "meta.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta["dataset_id"] = new_id
+            meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        except (OSError, json.JSONDecodeError):
+            pass
+        self._label_locks.pop(dataset_id, None)
+        return self.meta(new_id)
 
     def list_datasets(self) -> list[dict]:
         datasets = []

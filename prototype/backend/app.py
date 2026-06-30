@@ -278,6 +278,25 @@ def delete_dataset(dataset_id: str):
     return jsonify({"ok": True})
 
 
+@app.post("/api/datasets/<dataset_id>/rename")
+def rename_dataset(dataset_id: str):
+    """Rename a project (cache folder). Returns the new dataset_id, or an error
+    (409 if the dataset is open/locked, 400 if the name is invalid/taken)."""
+    body = request.get_json(force=True) or {}
+    new_name = str(body.get("name", "")).strip()
+    if not new_name:
+        return jsonify({"ok": False, "error": "Empty name"}), 400
+    if not store.dataset_dir(dataset_id).resolve().exists():
+        return jsonify({"ok": False, "error": "Dataset not found"}), 404
+    try:
+        meta = store.rename_dataset(dataset_id, new_name)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except (PermissionError, OSError) as exc:
+        return jsonify({"ok": False, "error": f"Cannot rename while in use: {exc}"}), 409
+    return jsonify({"ok": True, "dataset_id": meta["dataset_id"]})
+
+
 @app.post("/api/datasets/<dataset_id>/reveal")
 def reveal_dataset(dataset_id: str):
     """Open the dataset's cache folder in the OS file manager. The backend runs
@@ -302,7 +321,8 @@ def reveal_dataset(dataset_id: str):
 def open_dataset():
     body = request.get_json(force=True)
     path = _parse_client_path(str(body["path"]))
-    meta = store.open_dataset(path)
+    name = body.get("name")
+    meta = store.open_dataset(path, dataset_id=(str(name) if name else None))
     return jsonify({"dataset_id": meta["dataset_id"], "status": "ready", "meta": meta})
 
 
@@ -310,6 +330,8 @@ def open_dataset():
 def open_dataset_async():
     body = request.get_json(force=True)
     path = _parse_client_path(str(body["path"]))
+    name = body.get("name")
+    name = str(name) if name else None
     task_id = uuid.uuid4().hex
     tasks[task_id] = {"task_id": task_id, "status": "running", "stage": "queued", "progress": 0.0, "message": "Queued", "started_at": time.time()}
 
@@ -318,7 +340,7 @@ def open_dataset_async():
 
     def worker() -> None:
         try:
-            meta = store.open_dataset(path, progress=progress)
+            meta = store.open_dataset(path, progress=progress, dataset_id=name)
             tasks[task_id].update({"status": "ready", "stage": "ready", "progress": 1.0, "message": "Dataset ready", "dataset_id": meta["dataset_id"], "meta": meta, "finished_at": time.time()})
         except Exception as exc:
             tasks[task_id].update({"status": "failed", "stage": "error", "progress": 1.0, "message": str(exc), "finished_at": time.time()})

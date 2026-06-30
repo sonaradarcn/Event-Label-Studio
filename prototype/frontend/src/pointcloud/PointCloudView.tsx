@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ConvexGeometry } from "three/examples/jsm/geometries/ConvexGeometry.js";
 import type { PointPayload } from "../api/types";
+import { registerCapture, registerCaptureSvg } from "./capture";
 
 export type PointInfo = {
   index: number;
@@ -996,6 +997,13 @@ function formatTickValue(v: number, unit: string): string {
 
 type AxisTick = { worldPos: [number, number, number]; label: string; axis: "x" | "y" | "t" };
 
+// Vector description of the axes (world-space) for SVG export: a few lines and
+// text labels we project to 2D at capture time. Tiny (~ tens of items).
+export type AxisVecModel = {
+  lines: { a: [number, number, number]; b: [number, number, number]; color: string; opacity: number }[];
+  texts: { pos: [number, number, number]; text: string; color: string; size: number; weight?: number }[];
+};
+
 function computePayloadTRange(payload: PointPayload | null): { minT: number; maxT: number } | null {
   if (!payload || payload.count === 0) return null;
   let minT = payload.t_us[0];
@@ -1274,8 +1282,9 @@ function populateAxesGroup(
   // corner, filled for the time scrubber. bottom = earliest (t_min), top =
   // latest (t_max); xEnd/yEnd let the scrub plane span the full XY extent.
   outTAxis?: { bottom: THREE.Vector3; top: THREE.Vector3; xEnd: number; yEnd: number; valid: boolean },
-): void {
+): AxisVecModel {
   disposeAxesGroupChildren(group);
+  const vec: AxisVecModel = { lines: [], texts: [] };
   const tRange = tRangeOverride ?? computePayloadTRange(payload);
   const ticks = computeAxisTicks(buffers.norm.bounds, buffers.norm, meta, tRange, tickDensityScale);
   // Apply per-axis scale to tick world positions in-place so all callers
@@ -1331,6 +1340,11 @@ function populateAxesGroup(
     buildBoxWireGeometry(boxCorners),
     new THREE.LineBasicMaterial({ color: boxColorHex, transparent: true, opacity: isLight ? 0.22 : 0.18, depthTest: true, depthWrite: false })
   ));
+  // Vector model: 12 box edges (faint).
+  const boxHex = `#${boxColorHex.toString(16).padStart(6, "0")}`;
+  for (const [i, j] of [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]] as const) {
+    vec.lines.push({ a: boxCorners[i], b: boxCorners[j], color: boxHex, opacity: isLight ? 0.22 : 0.18 });
+  }
 
   // Per-axis colours (Plotly-style): X = blue, Y = green, T = purple.
   const AXC = { x: "#4a90e2", y: "#23b26d", t: "#8b5cf6" } as const;
@@ -1347,6 +1361,10 @@ function populateAxesGroup(
   const xSeg: number[] = [ox, oy, wMinZ, xEnd, oy, wMinZ];
   const ySeg: number[] = [ox, oy, wMinZ, ox, yEnd, wMinZ];
   const tSeg: number[] = [ox, oy, wMinZ, ox, oy, wMaxZ];
+  // Vector model: the 3 main coloured axis lines.
+  vec.lines.push({ a: [ox, oy, wMinZ], b: [xEnd, oy, wMinZ], color: AXC.x, opacity: 0.95 });
+  vec.lines.push({ a: [ox, oy, wMinZ], b: [ox, yEnd, wMinZ], color: AXC.y, opacity: 0.95 });
+  vec.lines.push({ a: [ox, oy, wMinZ], b: [ox, oy, wMaxZ], color: AXC.t, opacity: 0.95 });
   for (const tk of ticks) {
     const [wx, wy, wz] = tk.worldPos;
     if (tk.axis === "x") xSeg.push(wx, oy, wMinZ, wx, oy - yTickDir * tickLen, wMinZ);
@@ -1361,6 +1379,7 @@ function populateAxesGroup(
   const zeroSprite = makeTextSprite("0", { fg: tickStyle.fg, bg: tickStyle.bg, border: tickStyle.border, fontSize: 9, hWorld: 0.03 });
   zeroSprite.position.set(ox - off * 0.85, oy - yTickDir * off * 0.85, wMinZ);
   group.add(zeroSprite);
+  vec.texts.push({ pos: [ox - off * 0.85, oy - yTickDir * off * 0.85, wMinZ], text: "0", color: tickStyle.fg, size: 11 });
 
   // 4. Coloured arrowheads.
   const arrowSize = baseSpan * 0.018;
@@ -1373,24 +1392,35 @@ function populateAxesGroup(
   for (const tk of ticks) {
     const sp = makeTextSprite(tk.label, tickStyleFor(tk.axis));
     const [wx, wy, wz] = tk.worldPos;
-    if (tk.axis === "x") sp.position.set(wx, oy - yTickDir * off, wMinZ);
-    else if (tk.axis === "y") sp.position.set(ox - off, wy, wMinZ);
-    else sp.position.set(ox - off, oy, wz);
+    let lp: [number, number, number];
+    if (tk.axis === "x") lp = [wx, oy - yTickDir * off, wMinZ];
+    else if (tk.axis === "y") lp = [ox - off, wy, wMinZ];
+    else lp = [ox - off, oy, wz];
+    sp.position.set(lp[0], lp[1], lp[2]);
     group.add(sp);
+    vec.texts.push({ pos: lp, text: tk.label, color: AXC[tk.axis], size: 11 });
   }
 
   // 6. Axis-end unit chips (letter + unit, coloured per axis).
   const unitFg = isLight ? "rgba(40,55,75,0.62)" : "rgba(205,218,236,0.6)";
   const endOff = arrowSize + off * 1.6;
+  const xChipPos: [number, number, number] = [xEnd + endOff * (Math.sign(xEnd - ox) || 1), oy, wMinZ];
+  const yChipPos: [number, number, number] = [ox, yEnd + endOff * yTickDir, wMinZ];
+  const tChipPos: [number, number, number] = [ox, oy, wMaxZ + endOff];
   const xChip = makeAxisChip("X", "pixels", AXC.x, endStyle.bg, endStyle.border, unitFg);
-  xChip.position.set(xEnd + endOff * (Math.sign(xEnd - ox) || 1), oy, wMinZ);
+  xChip.position.set(xChipPos[0], xChipPos[1], xChipPos[2]);
   group.add(xChip);
   const yChip = makeAxisChip("Y", "pixels", AXC.y, endStyle.bg, endStyle.border, unitFg);
-  yChip.position.set(ox, yEnd + endOff * yTickDir, wMinZ);
+  yChip.position.set(yChipPos[0], yChipPos[1], yChipPos[2]);
   group.add(yChip);
   const tChip = makeAxisChip("T", "time", AXC.t, endStyle.bg, endStyle.border, unitFg);
-  tChip.position.set(ox, oy, wMaxZ + endOff);
+  tChip.position.set(tChipPos[0], tChipPos[1], tChipPos[2]);
   group.add(tChip);
+  vec.texts.push({ pos: xChipPos, text: "X  pixels", color: AXC.x, size: 13, weight: 600 });
+  vec.texts.push({ pos: yChipPos, text: "Y  pixels", color: AXC.y, size: 13, weight: 600 });
+  vec.texts.push({ pos: tChipPos, text: "T  time", color: AXC.t, size: 13, weight: 600 });
+
+  return vec;
 }
 
 function buildAxesLineGeometry(
@@ -1464,6 +1494,7 @@ export function PointCloudView({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const axesGroupRef = useRef<THREE.Group | null>(null);
+  const axisModelRef = useRef<AxisVecModel | null>(null);  // vector axes for SVG export
   const tRangeRef = useRef<{ minT: number; maxT: number } | null>(null);
   // T-axis world endpoints (bottom = earliest, top = latest), filled by the
   // axis builder and projected by the time scrubber.
@@ -2165,7 +2196,7 @@ export function PointCloudView({
     // ~4× more graduations across the visible axis. Quantised to powers of
     // 2 to avoid rebuilding axes on every micro-zoom-change.
     const tickDensity = Math.pow(2, Math.max(0, Math.round(Math.log2(Math.max(1, zoomValue)))));
-    populateAxesGroup(group, axesBuffers, axesMeta, payload, theme, tRange, tickDensity,
+    axisModelRef.current = populateAxesGroup(group, axesBuffers, axesMeta, payload, theme, tRange, tickDensity,
       { x: axisScaleX, y: axisScaleY, z: axisScaleZ }, tAxisRef.current);
     tRangeRef.current = tRange;
     // sceneVersion in deps: when the main setup effect rebuilds the renderer
@@ -2415,6 +2446,98 @@ export function PointCloudView({
     }
   }, [handleRef]);
 
+  // Re-render the CURRENT camera view into a much larger offscreen buffer to
+  // produce a clean, high-resolution figure (not a screen grab). gl_PointSize is
+  // left UNCHANGED (in buffer pixels), so at the higher resolution the points
+  // render as fine crisp dots instead of big blobs. The SVG export additionally
+  // renders the POINTS ONLY as that high-res image and re-draws the axes / ticks
+  // / labels as TRUE VECTOR (projected from axisModelRef) — a hybrid so the PDF
+  // stays crisp. Everything is restored and repainted afterwards.
+  useEffect(() => {
+    const renderToPng = (transparent: boolean): string | null => {
+      const renderer = rendererRef.current;
+      const scene = sceneRef.current;
+      const cam = cameraRef.current;
+      if (!renderer || !scene || !cam) return null;
+      const prevColor = renderer.getClearColor(new THREE.Color());
+      const prevAlpha = renderer.getClearAlpha();
+      const prevBg = scene.background;
+      const prevPR = renderer.getPixelRatio();
+      const csize = renderer.getSize(new THREE.Vector2());
+      // Up to 4x larger, but keep the buffer's largest side under 8192 (a safe
+      // WebGL drawing-buffer limit). Bigger factor => higher res AND finer points.
+      const curBufMax = Math.max(csize.x * prevPR, csize.y * prevPR);
+      const factor = Math.min(4, Math.max(1, 8192 / curBufMax));
+      let url: string | null = null;
+      try {
+        if (factor > 1.01) {
+          renderer.setPixelRatio(prevPR * factor);
+          renderer.setSize(csize.x, csize.y, false);  // updateStyle=false → buffer grows, CSS size unchanged
+        }
+        if (transparent) { scene.background = null; renderer.setClearColor(0x000000, 0); }
+        renderer.render(scene, cam);
+        url = renderer.domElement.toDataURL("image/png");
+      } catch {
+        url = null;
+      } finally {
+        renderer.setClearColor(prevColor, prevAlpha);
+        scene.background = prevBg;
+        if (factor > 1.01) {
+          renderer.setPixelRatio(prevPR);
+          renderer.setSize(csize.x, csize.y, false);
+        }
+        renderer.render(scene, cam);
+      }
+      return url;
+    };
+
+    registerCapture((opts) => renderToPng(!!opts?.transparent));
+
+    registerCaptureSvg(() => {
+      const renderer = rendererRef.current;
+      const scene = sceneRef.current;
+      const cam = cameraRef.current;
+      if (!renderer || !scene || !cam) return null;
+      const csize = renderer.getSize(new THREE.Vector2());
+      const W = Math.max(1, Math.round(csize.x));
+      const H = Math.max(1, Math.round(csize.y));
+      // Points-only high-res transparent layer (hide the axes — they become vector).
+      const axes = axesGroupRef.current;
+      const prevVis = axes ? axes.visible : true;
+      if (axes) axes.visible = false;
+      const png = renderToPng(true);
+      if (axes) axes.visible = prevVis;
+      renderer.render(scene, cam);  // repaint on-screen with axes back
+      if (!png) return null;
+
+      const project = (p: [number, number, number]): [number, number] => {
+        const v = new THREE.Vector3(p[0], p[1], p[2]).project(cam);
+        return [(v.x * 0.5 + 0.5) * W, (1 - (v.y * 0.5 + 0.5)) * H];
+      };
+      const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const out: string[] = [
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
+        `<image x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none" href="${png}"/>`,
+      ];
+      const model = axisModelRef.current;
+      if (model) {
+        for (const ln of model.lines) {
+          const [x1, y1] = project(ln.a);
+          const [x2, y2] = project(ln.b);
+          out.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${ln.color}" stroke-width="1.5" stroke-opacity="${ln.opacity}"/>`);
+        }
+        for (const tx of model.texts) {
+          const [x, y] = project(tx.pos);
+          out.push(`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Segoe UI, Arial, sans-serif" font-size="${tx.size}" fill="${tx.color}" text-anchor="middle" dominant-baseline="central"${tx.weight ? ` font-weight="${tx.weight}"` : ""}>${esc(tx.text)}</text>`);
+        }
+      }
+      out.push("</svg>");
+      return out.join("");
+    });
+
+    return () => { registerCapture(null); registerCaptureSvg(null); };
+  }, []);
+
   useEffect(() => {
     if (!hostRef.current) return;
     const observer = new ResizeObserver(([entry]) => {
@@ -2431,7 +2554,9 @@ export function PointCloudView({
     if (!mount || !host) return;
     mount.replaceChildren();
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: gpuPreference });
+    // alpha:true so the view can be captured with a transparent background
+    // (Print). Normal rendering still clears opaque (alpha 1), so it looks the same.
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: gpuPreference });
     renderer.setClearColor(theme === "light" ? 0xe8e8e8 : 0x10151d, 1);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(size.width, size.height, false);
@@ -2797,7 +2922,7 @@ export function PointCloudView({
       // Populate immediately — the dedicated axes-rebuild useEffect runs BEFORE
       // this one on viewMode toggles, so it cannot see the freshly-created group.
       if (buffers) {
-        populateAxesGroup(axesGroup, buffers, meta ?? null, payload, theme);
+        axisModelRef.current = populateAxesGroup(axesGroup, buffers, meta ?? null, payload, theme);
         tRangeRef.current = computePayloadTRange(payload);
       }
     }

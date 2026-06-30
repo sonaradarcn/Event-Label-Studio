@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BookOpen, Github } from "lucide-react";
 import { useI18n } from "../i18n/I18nContext";
 import { useTheme } from "../theme/ThemeContext";
-import { listCache, deleteDataset, revealDataset, exportDatasetDefault, type CacheEntry } from "../api/client";
+import { listCache, deleteDataset, renameDataset, revealDataset, exportDatasetDefault, type CacheEntry } from "../api/client";
 import { useConfirm } from "./ConfirmDialog";
 import eggMask from "../assets/easter-egg.png";
 
@@ -17,7 +17,8 @@ type Props = {
   onClose: () => void;
   gpuName: string;
   onOpenGpuModal: () => void;
-  onOpenDataset?: (sourcePath: string) => void;
+  onOpenDataset?: (sourcePath: string, name?: string) => void;
+  initialSection?: "display" | "general" | "cache" | "shortcuts" | "about";
 };
 
 // Human-readable byte size (e.g. 12.3 MB). Binary (1024) units.
@@ -64,6 +65,7 @@ export function SettingsModal({
   gpuName,
   onOpenGpuModal,
   onOpenDataset,
+  initialSection,
 }: Props) {
   const { t, locale, setLocale, locales } = useI18n();
   const { theme, toggleTheme } = useTheme();
@@ -73,6 +75,15 @@ export function SettingsModal({
   // Cache section state.
   const [cacheEntries, setCacheEntries] = useState<CacheEntry[]>([]);
   const [cacheLoading, setCacheLoading] = useState(false);
+  // Inline project rename.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+
+  // Open at the requested section (e.g. File → Project Manager jumps to "cache").
+  useEffect(() => {
+    if (visible) setSection(initialSection ?? "general");
+  }, [visible, initialSection]);
 
   const refreshCache = () => {
     setCacheLoading(true);
@@ -106,7 +117,9 @@ export function SettingsModal({
   const totalCacheBytes = cacheEntries.reduce((sum, e) => sum + (e.size_bytes || 0), 0);
 
   const handleOpen = (entry: CacheEntry) => {
-    onOpenDataset?.(entry.source_path);
+    // Open the EXISTING cache by its id (not re-derived from the file stem), so a
+    // custom-named project re-opens correctly and never re-decodes.
+    onOpenDataset?.(entry.source_path, entry.dataset_id);
     onClose?.();
   };
 
@@ -116,6 +129,22 @@ export function SettingsModal({
 
   const handleExport = (id: string) => {
     exportDatasetDefault(id).catch(() => { /* best-effort */ });
+  };
+
+  const startRename = (entry: CacheEntry) => {
+    setRenamingId(entry.dataset_id);
+    setRenameValue(entry.dataset_id);
+    setRenameError(null);
+  };
+  const cancelRename = () => { setRenamingId(null); setRenameError(null); };
+  const confirmRename = async (oldId: string) => {
+    const name = renameValue.trim();
+    if (!name || name === oldId) { cancelRename(); return; }
+    const res = await renameDataset(oldId, name);
+    if (!res.ok) { setRenameError(res.error || "Rename failed"); return; }
+    setRenamingId(null);
+    setRenameError(null);
+    refreshCache();
   };
 
   const handleDelete = async (id: string) => {
@@ -273,8 +302,23 @@ export function SettingsModal({
                   {cacheEntries.map((entry) => (
                     <div className="cacheRow" key={entry.dataset_id}>
                       <div className="cacheRowMain">
-                        <div className="cacheName">{entry.dataset_id}</div>
-                        <div className="cachePath" title={entry.source_path}>{entry.source_path}</div>
+                        {renamingId === entry.dataset_id ? (
+                          <>
+                            <div className="cacheRename">
+                              <input className="cacheRenameInput" value={renameValue} autoFocus
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") confirmRename(entry.dataset_id);
+                                  else if (e.key === "Escape") cancelRename();
+                                }} />
+                              <button className="cacheBtn" onClick={() => confirmRename(entry.dataset_id)}>{t("confirm.ok")}</button>
+                              <button className="cacheBtn" onClick={cancelRename}>{t("confirm.cancel")}</button>
+                            </div>
+                            {renameError && <div className="cacheRenameError">{renameError}</div>}
+                          </>
+                        ) : (
+                          <div className="cacheName">{entry.dataset_id}</div>
+                        )}
                       </div>
                       <div className="cacheMeta">
                         <span className="cacheMetaItem">{formatBytes(entry.size_bytes)}</span>
@@ -288,6 +332,9 @@ export function SettingsModal({
                       <div className="cacheActions">
                         <button className="cacheBtn" onClick={() => handleOpen(entry)}>
                           {t("settings.cache.open")}
+                        </button>
+                        <button className="cacheBtn" onClick={() => startRename(entry)}>
+                          {t("settings.cache.rename")}
                         </button>
                         <button className="cacheBtn" onClick={() => handleReveal(entry.dataset_id)}>
                           {t("settings.cache.reveal")}
